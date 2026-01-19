@@ -30,7 +30,7 @@ pub fn trim(input: &String, output: &String, n: usize) -> Result<()> {
             Ok(Event::Start(ref e)) if e.name().as_ref() == b"tu" => {
                 inside_tu = true;
                 skip_count += 1;
-                if skip_count > n {
+                if skip_count >= n {
                     writer.write_event(Event::Start(e.clone()))?;
                     just_skipped_tu = false;
                 } else {
@@ -40,7 +40,7 @@ pub fn trim(input: &String, output: &String, n: usize) -> Result<()> {
 
             Ok(Event::Empty(ref e)) if e.name().as_ref() == b"tu" => {
                 skip_count += 1;
-                if skip_count > n {
+                if skip_count >= n {
                     writer.write_event(Event::Empty(e.clone()))?;
                     just_skipped_tu = false;
                 } else {
@@ -49,7 +49,7 @@ pub fn trim(input: &String, output: &String, n: usize) -> Result<()> {
             }
 
             Ok(Event::End(ref e)) if e.name().as_ref() == b"tu" => {
-                if skip_count > n {
+                if skip_count >= n {
                     writer.write_event(Event::End(e.clone()))?;
                     just_skipped_tu = false;
                 } else {
@@ -63,14 +63,14 @@ pub fn trim(input: &String, output: &String, n: usize) -> Result<()> {
                 if just_skipped_tu && is_xml_whitespace(t.as_ref()) {
                     // skip writing this whitespace
                     just_skipped_tu = false;
-                } else if !(inside_tu && skip_count <= n) {
+                } else if !(inside_tu && skip_count < n) {
                     writer.write_event(Event::Text(t.clone()))?;
                     just_skipped_tu = false;
                 }
             }
 
             Ok(ev) => {
-                if !(inside_tu && skip_count <= n) {
+                if !(inside_tu && skip_count < n) {
                     writer.write_event(ev.clone())?;
                     just_skipped_tu = false;
                 }
@@ -86,4 +86,26 @@ pub fn trim(input: &String, output: &String, n: usize) -> Result<()> {
     }
 
     Ok(())
+}
+
+// test
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // use pretty_assertions::{assert_eq};
+    
+    #[test]
+    fn test_filter_no_skip_keep() {
+        let result = trim(&"test-data/trim/test.tmx".to_string(), &"test-data/trim/trimed.tmx".to_string(), 5);
+        assert!(result.is_ok());
+
+        let expected = std::fs::read_to_string("test-data/trim/expected.tmx").unwrap();
+        let output = std::fs::read_to_string("test-data/trim/trimed.tmx").unwrap();
+
+        // remove output file after test
+        // std::fs::remove_file("trimed.tmx").unwrap();
+
+        assert_eq!(expected, output);
+    }
 }

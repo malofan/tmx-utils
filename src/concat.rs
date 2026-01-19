@@ -28,11 +28,11 @@ pub fn concat(files: &[String], output: &String, unprotect: bool) -> Result<()> 
     }
 
     // Open first file and parse header, <body>, and <tu> nodes
-    let first_file = File::open(&files[0]).context("Failed to open first input file")?;
+    let first_file = File::open(&files[0]).context(format!("Failed to open first input file {}", &files[0]))?;
     let mut reader = Reader::from_reader(BufReader::new(first_file));
     reader.config_mut().trim_text(false);
 
-    let output_file = File::create(output).context("Failed to create output file")?;
+    let output_file = File::create(output).context(format!("Failed to create output file {}", output))?;
     let mut writer = Writer::new(BufWriter::new(output_file));
 
     let mut buf = Vec::new();
@@ -44,10 +44,19 @@ pub fn concat(files: &[String], output: &String, unprotect: bool) -> Result<()> 
             Ok(Event::Start(ref e)) if e.name().as_ref() == b"body" => {
                 writer.write_event(Event::Start(e.clone()))?;
                 in_body = true;
+
                 break;
             }
             Ok(Event::Empty(ref e)) if e.name().as_ref() == b"body" => {
+                if files.len() > 1 {
+                    writer.write_event(Event::Text(BytesText::from_escaped("<body>")))?;
+
+                    break;
+                }
+
                 writer.write_event(Event::Empty(e.clone()))?;
+                in_body = false;
+
                 break;
             }
             Ok(Event::Eof) => return Err(anyhow::anyhow!("Malformed TMX: <body> not found")),
@@ -62,6 +71,10 @@ pub fn concat(files: &[String], output: &String, unprotect: bool) -> Result<()> 
     if in_body {
         loop {
             match reader.read_event_into(&mut buf) {
+                Ok(Event::Empty(ref e)) if e.name().as_ref() == b"body" => {
+                    // empty <body/> tag
+                    break;
+                }
                 Ok(Event::Start(ref e)) if e.name().as_ref() == b"tu" => {
                     writer.write_event(Event::Start(e.clone()))?;
                 }
@@ -89,13 +102,17 @@ pub fn concat(files: &[String], output: &String, unprotect: bool) -> Result<()> 
 
     // For each subsequent file, extract <tu> nodes and write them into output
     for file in &files[1..] {
-        let input_file = File::open(file).context("Failed to open input file")?;
+        let input_file = File::open(file).context(format!("Failed to open input file {}", file))?;
         let mut reader = Reader::from_reader(BufReader::new(input_file));
         reader.config_mut().trim_text(false);
         let mut buf = Vec::new();
         let mut just_skipped_node = false;
         loop {
             match reader.read_event_into(&mut buf) {
+                Ok(Event::Empty(ref e)) if e.name().as_ref() == b"body" => {
+                    // empty <body/> tag
+                    break;
+                }
                 Ok(Event::Start(ref e)) if e.name().as_ref() == b"tu" => {
                     writer.write_event(Event::Start(e.clone()))?;
                 }
